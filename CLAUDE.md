@@ -56,8 +56,8 @@ terraform -chdir=infra/bootstrap validate
 terraform -chdir=infra/bootstrap plan
 terraform -chdir=infra/bootstrap apply
 
-npm run check:prod-domain-dns
 terraform -chdir=infra/prod init
+npm run check:prod-domain-dns
 terraform -chdir=infra/prod fmt -check
 terraform -chdir=infra/prod validate
 terraform -chdir=infra/prod plan

@@ -5,6 +5,11 @@ const DEFAULT_AWS_PROFILE = "indieverse-root";
 const HOSTED_ZONE_ID = "Z07945021SWCUENBCS47G";
 const PRODUCTION_DOMAIN = "shaders.deepansh.in";
 const ALLOW_EXISTING_RECORDS = "ALLOW_EXISTING_PRODUCTION_DOMAIN_RECORDS";
+const PRODUCTION_TERRAFORM_DIR = "infra/prod";
+const MANAGED_RECORDS = new Map([
+  ["A", "aws_route53_record.production_ipv4"],
+  ["AAAA", "aws_route53_record.production_ipv6"],
+]);
 
 function awsEnv() {
   const env = { ...process.env };
@@ -70,6 +75,50 @@ async function listRecordSets(env) {
   }
 }
 
+async function listTerraformState(env) {
+  const result = await run("terraform", [`-chdir=${PRODUCTION_TERRAFORM_DIR}`, "state", "list"], env);
+  return new Set(
+    result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean),
+  );
+}
+
+async function splitRecordsByState(records, env) {
+  let stateAddresses;
+
+  try {
+    stateAddresses = await listTerraformState(env);
+  } catch (error) {
+    throw new Error(
+      `${error.message}\n` +
+        `Existing ${productionRecordName()} records were found, but Terraform state could not be inspected. ` +
+        `Run terraform -chdir=${PRODUCTION_TERRAFORM_DIR} init, import existing managed records if appropriate, ` +
+        `or rerun with ${ALLOW_EXISTING_RECORDS}=1 after intentionally approving replacement.`,
+    );
+  }
+
+  return records.reduce(
+    (groups, record) => {
+      const managedAddress = MANAGED_RECORDS.get(record.Type);
+
+      if (managedAddress && stateAddresses.has(managedAddress)) {
+        groups.managed.push(record);
+      } else {
+        groups.unmanaged.push(record);
+      }
+
+      return groups;
+    },
+    { managed: [], unmanaged: [] },
+  );
+}
+
+function summarizeRecords(records) {
+  return records.map((record) => `${record.Name} ${record.Type}`).join(", ");
+}
+
 async function main() {
   const env = awsEnv();
   const recordName = productionRecordName();
@@ -81,12 +130,22 @@ async function main() {
     return;
   }
 
-  const summary = existingRecords.map((record) => `${record.Name} ${record.Type}`).join(", ");
+  const existingSummary = summarizeRecords(existingRecords);
   if (env[ALLOW_EXISTING_RECORDS] === "1") {
-    console.log(`Existing ${recordName} records approved by ${ALLOW_EXISTING_RECORDS}=1: ${summary}`);
+    console.log(`Existing ${recordName} records approved by ${ALLOW_EXISTING_RECORDS}=1: ${existingSummary}`);
     return;
   }
 
+  const { managed, unmanaged } = await splitRecordsByState(existingRecords, env);
+
+  if (unmanaged.length === 0) {
+    console.log(
+      `Existing ${recordName} records are already managed by Terraform state: ${summarizeRecords(managed)}`,
+    );
+    return;
+  }
+
+  const summary = summarizeRecords(unmanaged);
   throw new Error(
     `Existing ${recordName} records found in hosted zone ${HOSTED_ZONE_ID}: ${summary}. ` +
       `Import the records into Terraform or rerun with ${ALLOW_EXISTING_RECORDS}=1 after intentionally approving replacement.`,

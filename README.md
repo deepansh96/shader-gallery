@@ -40,15 +40,15 @@ terraform -chdir=infra/bootstrap apply
 Before applying, check that Terraform will not replace unmanaged Production Domain records:
 
 ```bash
-npm run check:prod-domain-dns
 terraform -chdir=infra/prod init
+npm run check:prod-domain-dns
 terraform -chdir=infra/prod fmt -check
 terraform -chdir=infra/prod validate
 terraform -chdir=infra/prod plan
 terraform -chdir=infra/prod apply
 ```
 
-The DNS guard reads hosted zone `Z07945021SWCUENBCS47G` and exits non-zero if an exact `shaders.deepansh.in.` record already exists. If that happens, inspect the record before applying. Either import the existing A/AAAA records into the matching Terraform resources, remove or replace them intentionally, or rerun with `ALLOW_EXISTING_PRODUCTION_DOMAIN_RECORDS=1` only after approving replacement.
+The DNS guard reads hosted zone `Z07945021SWCUENBCS47G` and exits non-zero if an exact `shaders.deepansh.in.` record exists outside the production Terraform state. Run `terraform -chdir=infra/prod init` first so the guard can inspect state. If the guard reports unmanaged records, inspect them before applying. Either import existing A/AAAA records into the matching Terraform resources, remove or replace them intentionally, or rerun with `ALLOW_EXISTING_PRODUCTION_DOMAIN_RECORDS=1` only after approving replacement.
 
 ACM DNS validation is managed in the existing `deepansh.in.` hosted zone. Certificate issuance commonly takes several minutes, and CloudFront distribution updates can take roughly 15-30 minutes to propagate after Terraform completes. During that window, the default CloudFront domain or the Production Domain may briefly serve the previous certificate/configuration.
 

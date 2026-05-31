@@ -4,15 +4,88 @@
 
 Shader Gallery is a Vite single-page app for collecting high-end realtime shader demos. Each demo should feel like a polished, interactive graphics piece rather than a static shader snippet.
 
-## Glossary
+## Language
 
-### Shader Template
+**Shader Gallery**:
+A Vite single-page app that collects polished realtime shader demos.
+_Avoid_: shader repo, examples site, snippets page
 
-The shared runtime, layout, scene shell, debug tooling, and performance instrumentation used by Gallery Items. Template improvements should benefit Gallery Items without copying code into each item.
+**Shader Template**:
+The shared runtime, scene shell, debug tooling, and performance instrumentation used by Gallery Items.
+_Avoid_: copied starter, demo shell, runtime fork
 
-### Gallery Item
+**Gallery Item**:
+A routed shader demo with its own visual concept, metadata, parameters, and scene component.
+_Avoid_: snippet, example, shader page
 
-A routed shader demo in the gallery. A Gallery Item owns its visual concept and shader implementation while using the Shader Template for common app, rendering, debug, and performance behavior.
+**Template Lab**:
+The first Gallery Item that proves the Shader Template with a simple fullscreen GLSL shader.
+_Avoid_: starter page, placeholder demo
+
+**Debug Tooling**:
+Query-gated controls and renderer statistics used while developing or inspecting a Gallery Item.
+_Avoid_: admin panel, dev mode, GPU VRAM monitor
+
+**Gallery Thumbnail**:
+A static, metadata-driven preview card for a Gallery Item on the home route.
+_Avoid_: live canvas, background shader, preview renderer
+
+**Production Domain**:
+The public hostname `shaders.deepansh.in` where Shader Gallery is served.
+_Avoid_: root domain, apex domain, staging URL
+
+**Deployment Stack**:
+The AWS infrastructure that serves Shader Gallery as a static SPA.
+_Avoid_: hosting script, CI pipeline, app server
+
+**App Origin**:
+The private S3 bucket that stores built SPA assets for CloudFront.
+_Avoid_: public bucket, website bucket, artifact store
+
+**Edge Distribution**:
+The CloudFront distribution that serves the App Origin over HTTPS and handles SPA fallbacks.
+_Avoid_: CDN config, proxy, web server
+
+**Deploy Artifact**:
+The built `dist/` output uploaded to the App Origin.
+_Avoid_: Terraform asset, source bundle, release archive
+
+**Terraform State**:
+The remote AWS-backed state file for the Deployment Stack.
+_Avoid_: local state, app database, deploy log
+
+## Relationships
+
+- The **Shader Gallery** contains one or more **Gallery Items**.
+- A **Gallery Item** mounts inside exactly one **Shader Template**.
+- The **Shader Template** provides **Debug Tooling** to every **Gallery Item** when `debug=true` is present.
+- A **Gallery Item** has exactly one **Gallery Thumbnail** on the home route.
+- **Template Lab** is exactly one **Gallery Item**.
+- The **Production Domain** points to exactly one **Edge Distribution**.
+- The **Edge Distribution** reads from exactly one **App Origin**.
+- The **App Origin** stores one active **Deploy Artifact** at a time.
+- The **Deployment Stack** manages the **App Origin**, **Edge Distribution**, certificate, and **Production Domain** record.
+- The **Deployment Stack** is recorded in exactly one **Terraform State** for the `prod` environment.
+
+## Example dialogue
+
+> **Dev:** "When a new **Gallery Item** is added, should it copy the current **Shader Template** files?"
+> **Domain expert:** "No. Register the **Gallery Item** and mount it inside the shared **Shader Template** so template improvements apply everywhere."
+>
+> **Dev:** "Can the home page use live shader canvases for each **Gallery Thumbnail**?"
+> **Domain expert:** "Not by default. A **Gallery Thumbnail** is static unless a specific item justifies a richer preview."
+>
+> **Dev:** "Does Terraform upload the **Deploy Artifact** to the **App Origin**?"
+> **Domain expert:** "No. Terraform owns the **Deployment Stack**; a separate deploy command uploads `dist/` and invalidates the **Edge Distribution**."
+
+## Flagged ambiguities
+
+- "demo", "example", and "shader page" all refer to a **Gallery Item** when discussing routed shader experiences.
+- "template" means **Shader Template**, not a copied starter folder for each new item.
+- "thumbnail" means **Gallery Thumbnail**, a static metadata card by default rather than a live shader canvas.
+- "memory monitor" in **Debug Tooling** means renderer-reported counts, not true GPU VRAM telemetry.
+- "deployment" can mean either **Deployment Stack** infrastructure or **Deploy Artifact** upload; this project keeps those separate.
+- "bucket" means **App Origin** when discussing production hosting, and it must remain private behind the **Edge Distribution**.
 
 ## Decisions
 

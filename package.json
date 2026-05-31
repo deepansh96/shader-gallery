@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "check:prod-domain-dns": "node scripts/check-prod-domain-dns.mjs",
     "deploy:prod": "node scripts/deploy-prod.mjs",
     "preview": "vite preview"
   },

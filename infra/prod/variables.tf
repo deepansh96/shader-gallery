@@ -22,6 +22,18 @@ variable "project_name" {
   default     = "shader-gallery"
 }
 
+variable "hosted_zone_id" {
+  description = "Existing public deepansh.in Route 53 hosted zone ID."
+  type        = string
+  default     = "Z07945021SWCUENBCS47G"
+}
+
+variable "production_domain" {
+  description = "Production Domain served by the Edge Distribution."
+  type        = string
+  default     = "shaders.deepansh.in"
+}
+
 variable "tags" {
   description = "Additional tags for production resources."
   type        = map(string)

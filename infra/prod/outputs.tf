@@ -14,11 +14,31 @@ output "edge_distribution_id" {
 }
 
 output "edge_distribution_domain_name" {
-  description = "CloudFront default domain name for this slice."
+  description = "CloudFront default domain name."
   value       = aws_cloudfront_distribution.edge.domain_name
 }
 
 output "aws_region" {
   description = "AWS region used by the Deployment Stack and deploy command."
   value       = var.aws_region
+}
+
+output "certificate_arn" {
+  description = "ACM certificate ARN for the Production Domain."
+  value       = aws_acm_certificate.production.arn
+}
+
+output "hosted_zone_id" {
+  description = "Existing public deepansh.in Route 53 hosted zone ID."
+  value       = data.aws_route53_zone.production.zone_id
+}
+
+output "production_domain" {
+  description = "Production Domain served by Shader Gallery."
+  value       = var.production_domain
+}
+
+output "production_url" {
+  description = "HTTPS URL for the production Shader Gallery app."
+  value       = "https://${var.production_domain}"
 }

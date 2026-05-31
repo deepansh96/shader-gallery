@@ -42,3 +42,8 @@ output "production_url" {
   description = "HTTPS URL for the production Shader Gallery app."
   value       = "https://${var.production_domain}"
 }
+
+output "github_actions_deploy_role_arn" {
+  description = "IAM role ARN assumed by the GitHub Actions production deploy workflow."
+  value       = aws_iam_role.github_actions_deploy.arn
+}

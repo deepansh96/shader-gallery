@@ -16,7 +16,7 @@ Open a gallery item with `?debug=true` to show Tweakpane controls and renderer s
 
 ## Production Deployment
 
-Production is served from `https://shaders.deepansh.in` through a private S3 App Origin and CloudFront Edge Distribution managed by Terraform. Use AWS profile `indieverse-root` in account `339097327659`. The existing public Route 53 hosted zone is `deepansh.in.` with ID `Z07945021SWCUENBCS47G`.
+Production is served from `https://shaders.deepansh.in` through a private S3 App Origin and CloudFront Edge Distribution managed by Terraform. Use AWS profile `indieverse-root` in account `339097327659` for local operations. The existing public Route 53 hosted zone is `deepansh.in.` with ID `Z07945021SWCUENBCS47G`.
 
 Terraform uses two roots:
 
@@ -40,12 +40,12 @@ terraform -chdir=infra/bootstrap apply
 Before applying, check that Terraform will not replace unmanaged Production Domain records:
 
 ```bash
-terraform -chdir=infra/prod init
+AWS_PROFILE=indieverse-root terraform -chdir=infra/prod init
 npm run check:prod-domain-dns
-terraform -chdir=infra/prod fmt -check
-terraform -chdir=infra/prod validate
-terraform -chdir=infra/prod plan
-terraform -chdir=infra/prod apply
+AWS_PROFILE=indieverse-root terraform -chdir=infra/prod fmt -check
+AWS_PROFILE=indieverse-root terraform -chdir=infra/prod validate
+AWS_PROFILE=indieverse-root terraform -chdir=infra/prod plan
+AWS_PROFILE=indieverse-root terraform -chdir=infra/prod apply
 ```
 
 The DNS guard reads hosted zone `Z07945021SWCUENBCS47G` and exits non-zero if an exact `shaders.deepansh.in.` record exists outside the production Terraform state. Run `terraform -chdir=infra/prod init` first so the guard can inspect state. If the guard reports unmanaged records, inspect them before applying. Either import existing A/AAAA records into the matching Terraform resources, remove or replace them intentionally, or rerun with `ALLOW_EXISTING_PRODUCTION_DOMAIN_RECORDS=1` only after approving replacement.
@@ -71,7 +71,24 @@ npm run deploy:prod
 
 The deploy command rebuilds the app, reads `app_origin_bucket_name`, `edge_distribution_id`, and `aws_region` from `infra/prod` Terraform outputs, uploads hashed `dist/assets/` files before `index.html`, and creates a `/*` CloudFront invalidation. Old hashed assets are retained during deploys so already-loaded clients can still request previous content-addressed files. `index.html` uses `Cache-Control: no-cache`; hashed Vite assets use `Cache-Control: public, max-age=31536000, immutable`; other classified static files default to `no-cache`.
 
-The v1 deploy path has no deploy mutex. Avoid running simultaneous manual deploys. Roll back by checking out or rebuilding a known-good version, then rerunning `npm run deploy:prod`.
+The manual v1 deploy path has no deploy mutex. Avoid running simultaneous manual deploys. Roll back by checking out or rebuilding a known-good version, then rerunning `npm run deploy:prod`.
+
+### Continuous Deployment
+
+`.github/workflows/deploy-prod.yml` deploys production on pushes to `main` and through manual `workflow_dispatch`.
+
+The workflow uses GitHub OIDC to assume Terraform-managed role `arn:aws:iam::339097327659:role/shader-gallery-prod-github-deploy`; no long-lived AWS access keys are required. The role is created by `infra/prod`, so the first local Terraform apply must complete before the workflow can deploy.
+
+The workflow runs:
+
+```bash
+npm ci
+npm run test:deploy
+terraform -chdir=infra/prod init -input=false
+npm run build
+npm run deploy:prod -- --preflight
+npm run deploy:prod
+```
 
 ### Verify Production
 

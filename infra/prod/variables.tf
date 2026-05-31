@@ -5,9 +5,9 @@ variable "aws_region" {
 }
 
 variable "aws_profile" {
-  description = "Local AWS profile used for production Terraform operations."
+  description = "Optional local AWS profile used for production Terraform operations. Leave null in CI so the provider uses environment credentials."
   type        = string
-  default     = "indieverse-root"
+  default     = null
 }
 
 variable "environment" {

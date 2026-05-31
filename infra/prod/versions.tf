@@ -7,7 +7,6 @@ terraform {
     region         = "us-east-1"
     dynamodb_table = "shader-gallery-prod-tfstate-lock"
     encrypt        = true
-    profile        = "indieverse-root"
   }
 
   required_providers {

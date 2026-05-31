@@ -45,7 +45,7 @@ When debug is enabled, expose useful tweakable parameters and renderer stats. Do
 
 Production target is `https://shaders.deepansh.in`.
 
-Deployment infrastructure is managed with Terraform on AWS using profile `indieverse-root` in account `339097327659`. The architecture is private S3 behind CloudFront Origin Access Control, Route 53 alias DNS in the existing `deepansh.in` hosted zone `Z07945021SWCUENBCS47G`, and an ACM certificate in `us-east-1`.
+Deployment infrastructure is managed with Terraform on AWS in account `339097327659`. Use `AWS_PROFILE=indieverse-root` for local Terraform operations. The architecture is private S3 behind CloudFront Origin Access Control, Route 53 alias DNS in the existing `deepansh.in` hosted zone `Z07945021SWCUENBCS47G`, and an ACM certificate in `us-east-1`.
 
 Terraform paths:
 
@@ -56,15 +56,15 @@ terraform -chdir=infra/bootstrap validate
 terraform -chdir=infra/bootstrap plan
 terraform -chdir=infra/bootstrap apply
 
-terraform -chdir=infra/prod init
+AWS_PROFILE=indieverse-root terraform -chdir=infra/prod init
 npm run check:prod-domain-dns
-terraform -chdir=infra/prod fmt -check
-terraform -chdir=infra/prod validate
-terraform -chdir=infra/prod plan
-terraform -chdir=infra/prod apply
+AWS_PROFILE=indieverse-root terraform -chdir=infra/prod fmt -check
+AWS_PROFILE=indieverse-root terraform -chdir=infra/prod validate
+AWS_PROFILE=indieverse-root terraform -chdir=infra/prod plan
+AWS_PROFILE=indieverse-root terraform -chdir=infra/prod apply
 ```
 
-Terraform manages infrastructure only. Built SPA assets deploy separately from `dist/`, with immutable cache headers for hashed Vite assets, short or no-cache headers for `index.html`, and a first-version `/*` CloudFront invalidation.
+Terraform manages infrastructure only. Built SPA assets deploy separately from `dist/`, with immutable cache headers for hashed Vite assets, short or no-cache headers for `index.html`, and a first-version `/*` CloudFront invalidation. GitHub Actions deploys production from `main` through `.github/workflows/deploy-prod.yml` using OIDC role `arn:aws:iam::339097327659:role/shader-gallery-prod-github-deploy`; the role is created by `infra/prod`.
 
 Deploy commands:
 

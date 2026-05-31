@@ -111,7 +111,7 @@ The home gallery uses static, metadata-driven thumbnail cards by default. Galler
 
 ### Deployment Uses AWS Static Hosting for shaders.deepansh.in
 
-Shader Gallery deploys as a static SPA at `shaders.deepansh.in`. Terraform should own the app-specific AWS resources and the single `shaders.deepansh.in` Route 53 record. The existing `deepansh.in` hosted zone is external infrastructure and should be referenced, not imported or broadly managed by this project.
+Shader Gallery deploys as a static SPA at `shaders.deepansh.in`. Terraform should own the app-specific AWS resources and the single `shaders.deepansh.in` Route 53 record. The existing `deepansh.in` hosted zone is external infrastructure and should be referenced, not imported or broadly managed by this project. Production operations target AWS account `339097327659` and hosted zone `Z07945021SWCUENBCS47G`.
 
 ### Terraform State Is Remote
 
@@ -139,4 +139,4 @@ The first Terraform deployment target is `prod` only. Resource naming and variab
 
 ### CloudFront Cache Policy Favors Fast App Updates
 
-Hashed Vite assets should receive long immutable cache headers. The SPA entrypoint should receive short or no-cache headers so route shell updates propagate quickly. The first deploy workflow can invalidate `/*` after each deploy for simplicity, with narrower invalidations left for later optimization.
+Hashed Vite assets should receive long immutable cache headers. The SPA entrypoint `index.html` receives `Cache-Control: no-cache` so route shell updates propagate quickly. The deploy workflow uploads immutable assets before `index.html`, retains old hashed assets during the same deploy for already-loaded clients, and invalidates `/*` after each deploy for simplicity, with narrower invalidations left for later optimization.

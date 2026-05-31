@@ -4,3 +4,17 @@ dist/
 test-results/
 .vite/
 .DS_Store
+
+# Terraform local artifacts
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.local.tfvars
+*.local.tfvars.json
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

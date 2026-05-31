@@ -45,9 +45,54 @@ When debug is enabled, expose useful tweakable parameters and renderer stats. Do
 
 Production target is `https://shaders.deepansh.in`.
 
-Deployment infrastructure should be managed with Terraform on AWS using profile `indieverse-root`. The intended architecture is private S3 behind CloudFront Origin Access Control, Route 53 alias DNS in the existing `deepansh.in` hosted zone, and an ACM certificate in `us-east-1`.
+Deployment infrastructure is managed with Terraform on AWS in account `339097327659`. Use `AWS_PROFILE=indieverse-root` for local Terraform operations. The architecture is private S3 behind CloudFront Origin Access Control, Route 53 alias DNS in the existing `deepansh.in` hosted zone `Z07945021SWCUENBCS47G`, and an ACM certificate in `us-east-1`.
 
-Terraform manages infrastructure only. Built SPA assets deploy separately from `dist/`, with immutable cache headers for hashed Vite assets, short or no-cache headers for `index.html`, and a first-version `/*` CloudFront invalidation.
+Terraform paths:
+
+```bash
+terraform -chdir=infra/bootstrap init
+terraform -chdir=infra/bootstrap fmt -check
+terraform -chdir=infra/bootstrap validate
+terraform -chdir=infra/bootstrap plan
+terraform -chdir=infra/bootstrap apply
+
+AWS_PROFILE=indieverse-root terraform -chdir=infra/prod init
+npm run check:prod-domain-dns
+AWS_PROFILE=indieverse-root terraform -chdir=infra/prod fmt -check
+AWS_PROFILE=indieverse-root terraform -chdir=infra/prod validate
+AWS_PROFILE=indieverse-root terraform -chdir=infra/prod plan
+AWS_PROFILE=indieverse-root terraform -chdir=infra/prod apply
+```
+
+Terraform manages infrastructure only. Built SPA assets deploy separately from `dist/`, with immutable cache headers for hashed Vite assets, short or no-cache headers for `index.html`, and a first-version `/*` CloudFront invalidation. GitHub Actions deploys production from `main` through `.github/workflows/deploy-prod.yml` using OIDC role `arn:aws:iam::339097327659:role/shader-gallery-prod-github-deploy`; the role is created by `infra/prod`.
+
+Deploy commands:
+
+```bash
+npm run build
+npm run deploy:prod -- --preflight
+npm run deploy:prod
+```
+
+The deploy script reads `app_origin_bucket_name`, `edge_distribution_id`, and `aws_region` from `infra/prod` Terraform outputs, uploads retained hashed assets before `index.html`, and does not delete old hashed assets during the same deploy.
+
+Production verification commands:
+
+```bash
+APP_BUCKET=$(terraform -chdir=infra/prod output -raw app_origin_bucket_name)
+HASHED_ASSET=$(find dist/assets -type f | head -n 1 | sed 's#dist/##')
+
+curl -I https://shaders.deepansh.in
+curl -I http://shaders.deepansh.in
+curl -I https://shaders.deepansh.in/index.html
+curl -I "https://shaders.deepansh.in/${HASHED_ASSET}"
+curl -I https://shaders.deepansh.in/missing-asset.js
+curl -I https://shaders.deepansh.in/gallery/template-lab
+curl -I https://shaders.deepansh.in/gallery/not-a-real-item
+curl -I "https://${APP_BUCKET}.s3.us-east-1.amazonaws.com/index.html"
+```
+
+Verify HTTPS serving, HTTP-to-HTTPS redirect, Template Lab deep-link refresh, invalid Gallery Item client redirect home, accepted v1 HTML fallback for missing assets, direct S3 AccessDenied behavior, cache headers, and `?debug=true` showing Tweakpane controls only when present.
 
 ## Ralph Workflow
 

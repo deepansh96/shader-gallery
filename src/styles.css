@@ -121,6 +121,27 @@ input {
     linear-gradient(135deg, #050510, #14162d 50%, #070610);
 }
 
+.thumbnail-shader-lockpicking {
+  background:
+    /* keyhole bore: bright round glint at center */
+    radial-gradient(circle 15px at 50% 44%, rgba(224, 244, 255, 0.95), rgba(143, 214, 255, 0.45) 60%, transparent 100%),
+    /* keyhole slot: narrow tapering glint below the bore */
+    radial-gradient(9px 30px at 50% 56%, rgba(190, 228, 255, 0.6), transparent 100%),
+    /* hint of spectral banding: a faint caustic dispersion ring around the keyhole */
+    radial-gradient(
+      circle at 50% 47%,
+      transparent 18%,
+      rgba(125, 249, 255, 0.2) 22%,
+      rgba(150, 120, 255, 0.18) 28%,
+      rgba(255, 78, 205, 0.16) 35%,
+      transparent 48%
+    ),
+    /* cool halo on the Receiving Plane behind the Lock Tumbler */
+    radial-gradient(circle at 50% 42%, rgba(34, 58, 108, 0.55), transparent 60%),
+    /* dark glass backdrop */
+    linear-gradient(160deg, #04040d 0%, #080b1a 55%, #050410 100%);
+}
+
 .card-body {
   display: grid;
   align-content: start;

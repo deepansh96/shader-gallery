@@ -22,9 +22,13 @@ Run these from the project root:
 npm run dev
 npm run build
 npm run preview
+npm run test       # Vitest: src/** unit tests (TS, Vite-native)
+npm run test:deploy # node --test: scripts/*.test.mjs deploy tooling
 ```
 
 Use `npm run build` as the baseline quality check before committing code changes. For frontend changes, also smoke test the relevant route in a browser and verify the canvas renders non-blank.
+
+There are two separate test runners, by design: Vitest owns app TypeScript under `src/**` (scoped via `vitest.config.ts` `include: ["src/**/*.test.ts"]`), and `node --test` owns the `scripts/*.test.mjs` deploy tooling. Keep them distinct — do not let Vitest pick up the deploy scripts. Extract a Gallery Item's load-bearing, framework-free logic (e.g. puzzle/Solve math) into a pure module with no React/Three imports and unit-test it with Vitest; React/R3F rendering, shaders, and DOM drag wiring are validated by `npm run build` plus a manual browser smoke test, not unit tests.
 
 ## Routing And Gallery Items
 
@@ -34,6 +38,15 @@ Use `npm run build` as the baseline quality check before committing code changes
 - Register Gallery Items in `src/gallery/items.ts`.
 - Put item-specific visual code under `src/gallery/<slug>/`.
 - Shared runtime, layout, debug tooling, and renderer behavior belong under `src/template/` or `src/rendering/`.
+
+## Gallery Item Implementation Patterns
+
+These conventions emerged building interactive items and apply to any item with live runtime state or postprocessing:
+
+- **Live shader uniforms via material refs.** For per-frame updates, mutate `materialRef.current.uniforms.X.value` in place inside `useFrame`. Treat the `uniforms` object passed to `<shaderMaterial>` as initial seeding only — live writes must go through the material ref to reliably reach the GPU. Reuse existing objects (`color.set(...).multiplyScalar(...)`); do not allocate geometry or new uniform objects per frame.
+- **Item-local bloom with `@react-three/postprocessing` (React 19).** Hold the `<Bloom>` effect through a function (callback) ref and mutate `.intensity` per frame; do NOT pass a changing `intensity` prop. The wrapper memoizes on `JSON.stringify(props)`, so a live-changing prop reconstructs (or crashes) the effect — a function-valued ref is skipped by that memo. Mount `<EffectComposer>` only inside the item's own subtree (ADR-0001), never in the shared Template.
+- **Item-local touch handling.** To suppress page scroll during touch-drag, set `touch-action: none` on `gl.domElement` for the item's lifetime in a `useEffect` and restore the prior inline value on unmount — no Template-level CSS. Use pointer events with `setPointerCapture` and a single active pointer id so drags continue off-canvas and multi-touch does not corrupt state.
+- **Runtime state in refs, tuning in params.** Live puzzle/interaction state (angle, velocity, timers, solved flag, live target) lives in refs mutated in `useFrame`, never in registry `params`. The `params` surface is the static, debug-gated Tweakpane tuning path; read params live in `useFrame` when a control must take effect immediately.
 
 ## Debug Tooling
 

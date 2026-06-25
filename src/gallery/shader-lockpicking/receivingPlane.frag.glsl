@@ -9,6 +9,10 @@ uniform float uTargetAngle;
 uniform float uProximity;
 // Base seam crispness (debug-tunable); proximity sharpens it further near target.
 uniform float uCausticSharpness;
+// Solve glow in [0, 1], held high during the brief success hold. At Solve the
+// seam snaps fully crisp into the keyhole and a spectral key-silhouette glint
+// fires; back to 0 once the puzzle re-arms and the seam returns to searching.
+uniform float uSolved;
 
 varying vec2 vUv;
 
@@ -38,25 +42,28 @@ void main() {
 
   // Caustic Seam: a luminous band swept across the plane at the live rotation
   // angle. As proximity → 1 the band eases onto the Target Zone orientation and
-  // converges through the keyhole centre, so alignment reads visually.
+  // converges through the keyhole centre, so alignment reads visually. On Solve
+  // the convergence is forced fully home so the seam snaps crisp into the keyhole.
+  float converge = max(uProximity, uSolved);
   vec2 liveDir = vec2(cos(uSeamAngle), sin(uSeamAngle));
   vec2 targetDir = vec2(cos(uTargetAngle), sin(uTargetAngle));
-  vec2 dir = normalize(mix(liveDir, targetDir, uProximity * uProximity));
+  vec2 dir = normalize(mix(liveDir, targetDir, converge * converge));
   vec2 perp = vec2(-dir.y, dir.x);
-  float seamOffset = mix(uSeamOffset, 0.0, uProximity);
+  float seamOffset = mix(uSeamOffset, 0.0, converge);
   float band = dot(p, perp) - seamOffset;
 
   // Sharpness: the debug-tuned base crispness, tightened further as proximity
-  // climbs. Higher sharpness → a narrower, brighter core; far away the seam is
-  // wide and diffuse so "am I close?" is obvious without any HUD.
-  float sharpness = uCausticSharpness * (0.6 + 1.8 * uProximity);
+  // climbs and snapped razor-sharp on Solve. Higher sharpness → a narrower,
+  // brighter core; far away the seam is wide and diffuse so "am I close?" is
+  // obvious without any HUD.
+  float sharpness = uCausticSharpness * (0.6 + 1.8 * converge) * (1.0 + 2.5 * uSolved);
   float coreWidth = 0.10 / max(sharpness, 0.05);
   float haloWidth = 0.34 / max(uCausticSharpness, 0.05);
   float core = smoothstep(coreWidth, 0.0, abs(band));
-  float halo = smoothstep(haloWidth, 0.0, abs(band)) * mix(0.12, 0.4, uProximity);
+  float halo = smoothstep(haloWidth, 0.0, abs(band)) * mix(0.12, 0.4, converge);
   float along = dot(p, dir);
   float streak = 0.55 + 0.45 * sin(along * 18.0 + uSeamAngle * 7.0);
-  float brightness = mix(0.4, 1.5, uProximity);
+  float brightness = mix(0.4, 1.5, converge) * (1.0 + 1.3 * uSolved);
   vec3 seamColor = vec3(0.45, 0.78, 1.0);
   color += seamColor * (core * streak + halo) * brightness;
 
@@ -66,6 +73,13 @@ void main() {
   float edge = smoothstep(0.022, 0.0, abs(kh));
   color = mix(color, color * 0.25, interior);
   color += vec3(0.78, 0.86, 1.0) * edge * 0.7;
+
+  // Solve glint: the keyhole flares with a held spectral hue — edge rim plus an
+  // interior fill — so the Solve reads as the key silhouette lighting up. The
+  // win condition stays the scalar angle check; this is purely the visual cue.
+  vec3 solvedSpectral = vec3(0.95, 0.62, 1.0);
+  color += solvedSpectral * edge * uSolved * 1.6;
+  color += solvedSpectral * interior * uSolved * 0.5;
 
   gl_FragColor = vec4(color, 1.0);
 }

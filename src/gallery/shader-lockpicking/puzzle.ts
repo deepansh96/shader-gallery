@@ -31,6 +31,39 @@ export function proximity(angle: number, target: number): number {
   return 1 - angularDistance(angle, target) / Math.PI;
 }
 
+/**
+ * The Solve condition for Shader Lockpicking: `true` exactly when the Lock
+ * Tumbler's rotation `angle` is within `tolerance` of the Target Zone `target`,
+ * measured by shortest-arc distance (so it is wrap-safe across 0/2π). This is
+ * the single cheap scalar check that defines a Solve — never 2D pattern
+ * matching against the keyhole silhouette.
+ */
+export function isSolved(angle: number, target: number, tolerance: number): boolean {
+  return angularDistance(angle, target) < tolerance;
+}
+
+/**
+ * Re-arm the puzzle with a fresh Target Zone angle that is guaranteed to be at
+ * least `minSeparation` (shortest-arc, radians) away from `currentAngle`, so the
+ * new round is never trivially already solved. `rng` is injected (a `() =>
+ * number` in `[0, 1)`) so the choice is deterministic under test.
+ *
+ * The angles within `minSeparation` on either side of `currentAngle` are
+ * forbidden; the allowed offsets run from `minSeparation` to `2π −
+ * minSeparation`. Mapping `rng()` linearly onto that band keeps the shortest-arc
+ * distance ≥ `minSeparation` for every value of `rng()` (requires
+ * `minSeparation ≤ π`). The result is normalized into `[0, 2π)`.
+ */
+export function pickNewTarget(
+  currentAngle: number,
+  rng: () => number,
+  minSeparation: number,
+): number {
+  const allowedSpan = TWO_PI - 2 * minSeparation;
+  const offset = minSeparation + rng() * allowedSpan;
+  return normalizeAngle(currentAngle + offset);
+}
+
 /** Live rotation state for the Lock Tumbler: current angle and angular velocity. */
 export type RotationState = {
   angle: number;

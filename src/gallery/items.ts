@@ -35,6 +35,9 @@ export const galleryItems: GalleryItemDefinition[] = [
       // Target Zone angle in radians, [0, 2π). Seeds the live target; changing it
       // in Tweakpane immediately moves where the Caustic Seam reads as aligned.
       { key: "targetAngle", label: "Target Angle", value: 2.4, min: 0, max: 6.28, step: 0.01 },
+      // Solve tolerance in radians: how close the rotation must get to the Target
+      // Zone to Solve. Read live each frame, so tuning difficulty is immediate.
+      { key: "solveTolerance", label: "Solve Tolerance", value: 0.18, min: 0.02, max: 0.6, step: 0.005 },
     ],
     component: ShaderLockpicking,
   },

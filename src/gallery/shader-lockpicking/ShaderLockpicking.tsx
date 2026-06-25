@@ -4,7 +4,7 @@ import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { AdditiveBlending, Color, DoubleSide, type ShaderMaterial } from "three";
 import type { GalleryParamValue, GallerySceneProps } from "../types";
-import { integrate, normalizeAngle, proximity } from "./puzzle";
+import { integrate, isSolved, normalizeAngle, pickNewTarget, proximity } from "./puzzle";
 import planeFragment from "./receivingPlane.frag.glsl";
 import planeVertex from "./receivingPlane.vert.glsl";
 import tumblerFragment from "./tumbler.frag.glsl";
@@ -26,6 +26,20 @@ const DRAG_SENSITIVITY = 0.01;
 // and the per-frame delta clamp that guards against a post-tab-away jump.
 const ROTATION_DAMPING = 4;
 const MAX_FRAME_DELTA = 0.05;
+
+// Solve loop tuning. On Solve the puzzle holds briefly (success pulse plays),
+// then re-arms with a fresh Target Zone kept at least MIN_SEPARATION away from
+// the current angle so it is never trivially already solved. MIN_SEPARATION sits
+// above the largest selectable solveTolerance for the same reason.
+const MIN_SEPARATION = 0.9; // radians (~51°)
+const SOLVE_HOLD_SECONDS = 1.1; // brief hold before re-arming
+// Transient bloom flare: a success-pulse envelope (1 → 0) that decays over this
+// many seconds and boosts bloom intensity at its peak.
+const PULSE_DECAY_SECONDS = 0.85;
+const BLOOM_PULSE_BOOST = 2.6;
+// Smoothing rate for the held solve glow that drives the shader glint/rim hue, so
+// it ramps in on Solve and out on re-arm rather than popping.
+const SOLVE_GLOW_EASE = 10;
 
 // Item-local bloom (ADR-0001): a single half-resolution blur pass with a low
 // luminance threshold, so the additive glass shells and the bright Caustic Seam
@@ -64,6 +78,7 @@ type ShellUniforms = {
   uFresnelStrength: { value: number };
   uShellOpacity: { value: number };
   uAngle: { value: number };
+  uSolved: { value: number };
 };
 
 function numberParam(value: GalleryParamValue | undefined, fallback: number) {
@@ -107,6 +122,9 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
   const bloomStrength = numberParam(params.bloomStrength, 1.4);
   // Target Zone angle (radians) seeded from the debug param.
   const targetAngleParam = numberParam(params.targetAngle, INITIAL_TARGET_ANGLE);
+  // Solve tolerance (radians), read live each frame so debug tuning of difficulty
+  // takes effect immediately.
+  const solveTolerance = numberParam(params.solveTolerance, 0.18);
 
   const gl = useThree((state) => state.gl);
 
@@ -122,6 +140,16 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
   const targetRef = useRef(normalizeAngle(targetAngleParam));
   // Drag movement accumulated by pointer handlers, drained each frame.
   const dragDeltaRef = useRef(0);
+
+  // Solve loop state — all in refs, mutated in useFrame, never in registry params.
+  // `solvedRef` suppresses re-triggering the pulse while still inside tolerance;
+  // `holdTimerRef` counts down the brief success hold before re-arm; `pulseRef`
+  // is the transient bloom-flare envelope; `glowRef` is the smoothed held glow
+  // that drives the shader key-silhouette glint and solved rim hue.
+  const solvedRef = useRef(false);
+  const holdTimerRef = useRef(0);
+  const pulseRef = useRef(0);
+  const glowRef = useRef(0);
 
   // Bloom effect handle plus the readable intensity ref. The intensity is driven
   // each frame from this ref (base = bloomStrength now); a later slice adds a
@@ -148,6 +176,7 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
         uFresnelStrength: { value: fresnelStrength },
         uShellOpacity: { value: shell.opacity },
         uAngle: { value: angleRef.current },
+        uSolved: { value: 0 },
       })),
     // Created once; live values are written every frame in useFrame.
     [],
@@ -161,6 +190,7 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
       uTargetAngle: { value: targetRef.current },
       uProximity: { value: proximity(angleRef.current, targetRef.current) },
       uCausticSharpness: { value: causticSharpness },
+      uSolved: { value: 0 },
     }),
     // Created once; live values are written every frame in useFrame.
     [],
@@ -222,6 +252,8 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
   }, [gl]);
 
   useFrame((_, delta) => {
+    const dt = Math.min(delta, MAX_FRAME_DELTA);
+
     const next = integrate(
       { angle: angleRef.current, velocity: velocityRef.current },
       { dragDelta: dragDeltaRef.current, dt: delta },
@@ -230,6 +262,34 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
     angleRef.current = next.angle;
     velocityRef.current = next.velocity;
     dragDeltaRef.current = 0;
+
+    // Solve loop: a single cheap scalar angle check (isSolved) each frame — never
+    // 2D pattern matching. On a transition into Solve, fire the success pulse once
+    // and start the brief hold; further Solves are suppressed (solvedRef stays
+    // true) until re-arm, so the pulse is not retriggered every frame while the
+    // angle remains within tolerance. solveTolerance is read live so debug tuning
+    // of difficulty is immediate.
+    if (solvedRef.current) {
+      holdTimerRef.current -= dt;
+      if (holdTimerRef.current <= 0) {
+        // Re-arm: a fresh Target Zone at least MIN_SEPARATION from the current
+        // angle (never trivially solved), then the seam returns to searching.
+        targetRef.current = pickNewTarget(next.angle, Math.random, MIN_SEPARATION);
+        solvedRef.current = false;
+      }
+    } else if (isSolved(next.angle, targetRef.current, solveTolerance)) {
+      solvedRef.current = true;
+      holdTimerRef.current = SOLVE_HOLD_SECONDS;
+      pulseRef.current = 1;
+    }
+
+    // Transient bloom-flare envelope decays toward 0; the held solve glow eases
+    // toward 1 while solved and back to 0 on re-arm, driving the shader glint/hue.
+    if (pulseRef.current > 0) {
+      pulseRef.current = Math.max(0, pulseRef.current - dt / PULSE_DECAY_SECONDS);
+    }
+    const glowTarget = solvedRef.current ? 1 : 0;
+    glowRef.current += (glowTarget - glowRef.current) * Math.min(1, dt * SOLVE_GLOW_EASE);
 
     // Feed the live angle into the seam + tumbler uniforms each frame; also pull
     // the current debug-tuned glass tint and Fresnel. All mutations are in-place
@@ -242,6 +302,7 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
       planeMaterial.uniforms.uTargetAngle.value = targetRef.current;
       planeMaterial.uniforms.uProximity.value = proximity(next.angle, targetRef.current);
       planeMaterial.uniforms.uCausticSharpness.value = causticSharpness;
+      planeMaterial.uniforms.uSolved.value = glowRef.current;
     }
     for (let i = 0; i < SHELLS.length; i++) {
       const shellMaterial = shellMaterialsRef.current[i];
@@ -249,12 +310,13 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
       shellMaterial.uniforms.uAngle.value = next.angle;
       shellMaterial.uniforms.uGlassTint.value.set(glassTint).multiplyScalar(SHELLS[i].tint);
       shellMaterial.uniforms.uFresnelStrength.value = fresnelStrength;
+      shellMaterial.uniforms.uSolved.value = glowRef.current;
     }
 
-    // Drive bloom intensity from the readable ref each frame (no per-frame alloc).
-    // Base intensity is the debug param read live, so Tweakpane tuning is
-    // immediate; a later slice adds a transient success-pulse boost here.
-    bloomIntensityRef.current = bloomStrength;
+    // Drive bloom intensity from the readable ref each frame (no per-frame alloc):
+    // the debug param read live (immediate tuning) plus the transient success-pulse
+    // boost, so a Solve fires a bloom flare that decays over the brief hold.
+    bloomIntensityRef.current = bloomStrength + pulseRef.current * BLOOM_PULSE_BOOST;
     const bloom = bloomEffectRef.current;
     if (bloom) {
       bloom.intensity = bloomIntensityRef.current;

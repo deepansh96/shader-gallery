@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { angularDistance, integrate, normalizeAngle, proximity } from "./puzzle";
+import {
+  angularDistance,
+  integrate,
+  isSolved,
+  normalizeAngle,
+  pickNewTarget,
+  proximity,
+} from "./puzzle";
 
 const TWO_PI = Math.PI * 2;
 
@@ -76,6 +83,81 @@ describe("proximity", () => {
   it("is wrap-safe: an angle just before 2π is near a target just after 0", () => {
     // 0.1 rad apart across the wrap → proximity reads as that small distance.
     expect(proximity(TWO_PI - 0.05, 0.05)).toBeCloseTo(1 - 0.1 / Math.PI, 10);
+  });
+});
+
+describe("isSolved", () => {
+  it("is true just inside the tolerance boundary", () => {
+    // Shortest-arc distance 0.09 < tolerance 0.1 → solved.
+    expect(isSolved(1.0, 1.09, 0.1)).toBe(true);
+  });
+
+  it("is false just outside the tolerance boundary", () => {
+    // Shortest-arc distance 0.11 > tolerance 0.1 → not solved.
+    expect(isSolved(1.0, 1.11, 0.1)).toBe(false);
+  });
+
+  it("is symmetric in angle and target around the boundary", () => {
+    expect(isSolved(1.09, 1.0, 0.1)).toBe(true);
+    expect(isSolved(1.11, 1.0, 0.1)).toBe(false);
+  });
+
+  it("is wrap-safe just inside the boundary across the 0/2π seam", () => {
+    // angle just before 2π, target just after 0 → distance 0.04 < 0.1.
+    expect(isSolved(TWO_PI - 0.02, 0.02, 0.1)).toBe(true);
+  });
+
+  it("is wrap-safe just outside the boundary across the 0/2π seam", () => {
+    // distance 0.4 across the wrap → outside tolerance 0.1.
+    expect(isSolved(TWO_PI - 0.2, 0.2, 0.1)).toBe(false);
+  });
+});
+
+describe("pickNewTarget", () => {
+  const minSeparation = 0.9;
+
+  it("returns a target at least minSeparation from the current angle across an rng sweep", () => {
+    const current = 1.3;
+    for (let i = 0; i <= 20; i++) {
+      const r = i / 20; // 0, 0.05, … , 1.0 — but rng is [0,1); use i/21-style guard below
+      const rng = () => Math.min(r, 0.999999);
+      const target = pickNewTarget(current, rng, minSeparation);
+      expect(angularDistance(target, current)).toBeGreaterThanOrEqual(minSeparation - 1e-9);
+    }
+  });
+
+  it("keeps the new target within [0, 2π) across an rng sweep", () => {
+    const current = 5.9; // near the wrap, so an unwrapped target would exceed 2π
+    for (let i = 0; i <= 20; i++) {
+      const rng = () => Math.min(i / 20, 0.999999);
+      const target = pickNewTarget(current, rng, minSeparation);
+      expect(target).toBeGreaterThanOrEqual(0);
+      expect(target).toBeLessThan(TWO_PI);
+    }
+  });
+
+  it("honors minSeparation when rng is near 0", () => {
+    const current = 0.5;
+    const target = pickNewTarget(current, () => 0, minSeparation);
+    expect(angularDistance(target, current)).toBeGreaterThanOrEqual(minSeparation - 1e-9);
+    expect(target).toBeGreaterThanOrEqual(0);
+    expect(target).toBeLessThan(TWO_PI);
+  });
+
+  it("honors minSeparation when rng is near 1", () => {
+    const current = 0.5;
+    const target = pickNewTarget(current, () => 0.999999, minSeparation);
+    expect(angularDistance(target, current)).toBeGreaterThanOrEqual(minSeparation - 1e-9);
+    expect(target).toBeGreaterThanOrEqual(0);
+    expect(target).toBeLessThan(TWO_PI);
+  });
+
+  it("is deterministic given the same injected rng", () => {
+    const rng = () => 0.42;
+    expect(pickNewTarget(2.0, rng, minSeparation)).toBeCloseTo(
+      pickNewTarget(2.0, rng, minSeparation),
+      10,
+    );
   });
 });
 

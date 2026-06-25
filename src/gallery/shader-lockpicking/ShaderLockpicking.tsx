@@ -1,6 +1,7 @@
 import { PerspectiveCamera } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { Bloom, EffectComposer } from "@react-three/postprocessing";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { AdditiveBlending, Color, DoubleSide, type ShaderMaterial } from "three";
 import type { GalleryParamValue, GallerySceneProps } from "../types";
 import { integrate, normalizeAngle, proximity } from "./puzzle";
@@ -25,6 +26,18 @@ const DRAG_SENSITIVITY = 0.01;
 // and the per-frame delta clamp that guards against a post-tab-away jump.
 const ROTATION_DAMPING = 4;
 const MAX_FRAME_DELTA = 0.05;
+
+// Item-local bloom (ADR-0001): a single half-resolution blur pass with a low
+// luminance threshold, so the additive glass shells and the bright Caustic Seam
+// read as luminous glowing glass against the dark backplate. Mounted only inside
+// this item's subtree — the Shader Template and Template Lab gain no composer.
+const BLOOM_RESOLUTION_SCALE = 0.5; // half-resolution render target (perf budget)
+const BLOOM_LUMINANCE_THRESHOLD = 0.2; // low → the glowing glass + seam bloom
+const BLOOM_LUMINANCE_SMOOTHING = 0.3;
+
+// Minimal handle onto the bloom effect: just the per-frame intensity write. Kept
+// structural so the item does not couple to the postprocessing effect type.
+type BloomHandle = { intensity: number };
 
 type ShellConfig = {
   radius: number;
@@ -91,6 +104,7 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
   const glassTint = colorParam(params.glassTint, "#8fd6ff");
   const fresnelStrength = numberParam(params.fresnelStrength, 1.6);
   const causticSharpness = numberParam(params.causticSharpness, 1.0);
+  const bloomStrength = numberParam(params.bloomStrength, 1.4);
   // Target Zone angle (radians) seeded from the debug param.
   const targetAngleParam = numberParam(params.targetAngle, INITIAL_TARGET_ANGLE);
 
@@ -108,6 +122,18 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
   const targetRef = useRef(normalizeAngle(targetAngleParam));
   // Drag movement accumulated by pointer handlers, drained each frame.
   const dragDeltaRef = useRef(0);
+
+  // Bloom effect handle plus the readable intensity ref. The intensity is driven
+  // each frame from this ref (base = bloomStrength now); a later slice adds a
+  // transient success-pulse boost on top before it reaches the effect.
+  const bloomEffectRef = useRef<BloomHandle | null>(null);
+  const bloomIntensityRef = useRef(bloomStrength);
+  // Stable callback ref: a function-valued ref is skipped by the postprocessing
+  // wrapper's JSON.stringify(props) memo, so live param changes neither crash nor
+  // reconstruct the effect (an object ref would do both under React 19).
+  const setBloomEffect = useCallback((effect: BloomHandle | null) => {
+    bloomEffectRef.current = effect;
+  }, []);
 
   // Tweakpane edits to `targetAngle` immediately move the live target so a
   // debugger can force a known Target Zone and watch the seam's "sharp" angle shift.
@@ -224,6 +250,15 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
       shellMaterial.uniforms.uGlassTint.value.set(glassTint).multiplyScalar(SHELLS[i].tint);
       shellMaterial.uniforms.uFresnelStrength.value = fresnelStrength;
     }
+
+    // Drive bloom intensity from the readable ref each frame (no per-frame alloc).
+    // Base intensity is the debug param read live, so Tweakpane tuning is
+    // immediate; a later slice adds a transient success-pulse boost here.
+    bloomIntensityRef.current = bloomStrength;
+    const bloom = bloomEffectRef.current;
+    if (bloom) {
+      bloom.intensity = bloomIntensityRef.current;
+    }
   });
 
   return (
@@ -252,6 +287,21 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
           }}
         />
       ))}
+
+      {/* Item-local postprocessing (ADR-0001): a single half-resolution bloom
+          pass lives inside this item's subtree only. Template Lab mounts no
+          composer, so the shared render path is unchanged. Intensity is mutated
+          per frame through the callback ref — no `intensity` prop, so live param
+          tuning never reconstructs the effect. */}
+      <EffectComposer>
+        <Bloom
+          ref={setBloomEffect}
+          mipmapBlur={false}
+          luminanceThreshold={BLOOM_LUMINANCE_THRESHOLD}
+          luminanceSmoothing={BLOOM_LUMINANCE_SMOOTHING}
+          resolutionScale={BLOOM_RESOLUTION_SCALE}
+        />
+      </EffectComposer>
     </>
   );
 }

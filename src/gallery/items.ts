@@ -1,3 +1,4 @@
+import { ShaderLockpicking } from "./shader-lockpicking/ShaderLockpicking";
 import { TemplateLab } from "./template-lab/TemplateLab";
 import type { GalleryItemDefinition } from "./types";
 
@@ -16,6 +17,19 @@ export const galleryItems: GalleryItemDefinition[] = [
       { key: "speed", label: "Speed", value: 0.85, min: 0, max: 2, step: 0.01 },
     ],
     component: TemplateLab,
+  },
+  {
+    slug: "shader-lockpicking",
+    title: "Shader Lockpicking",
+    description:
+      "A luminous glass Lock Tumbler suspended in darkness, casting a Caustic Seam across a keyhole-marked Receiving Plane.",
+    status: "Interactive",
+    thumbnailClass: "thumbnail-shader-lockpicking",
+    params: [
+      { key: "glassTint", label: "Glass Tint", value: "#8fd6ff", input: "color" },
+      { key: "fresnelStrength", label: "Fresnel", value: 1.6, min: 0, max: 4, step: 0.01 },
+    ],
+    component: ShaderLockpicking,
   },
 ];
 

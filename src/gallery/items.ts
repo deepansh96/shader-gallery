@@ -28,6 +28,10 @@ export const galleryItems: GalleryItemDefinition[] = [
     params: [
       { key: "glassTint", label: "Glass Tint", value: "#8fd6ff", input: "color" },
       { key: "fresnelStrength", label: "Fresnel", value: 1.6, min: 0, max: 4, step: 0.01 },
+      { key: "causticSharpness", label: "Caustic Sharpness", value: 1.0, min: 0.2, max: 3, step: 0.01 },
+      // Target Zone angle in radians, [0, 2π). Seeds the live target; changing it
+      // in Tweakpane immediately moves where the Caustic Seam reads as aligned.
+      { key: "targetAngle", label: "Target Angle", value: 2.4, min: 0, max: 6.28, step: 0.01 },
     ],
     component: ShaderLockpicking,
   },

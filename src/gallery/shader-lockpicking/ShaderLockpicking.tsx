@@ -3,7 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import { AdditiveBlending, Color, DoubleSide, type ShaderMaterial } from "three";
 import type { GalleryParamValue, GallerySceneProps } from "../types";
-import { integrate } from "./puzzle";
+import { integrate, normalizeAngle, proximity } from "./puzzle";
 import planeFragment from "./receivingPlane.frag.glsl";
 import planeVertex from "./receivingPlane.vert.glsl";
 import tumblerFragment from "./tumbler.frag.glsl";
@@ -12,6 +12,9 @@ import tumblerVertex from "./tumbler.vert.glsl";
 // Seeded framing: a starting angle and a backplate large enough to fill the
 // fixed-camera view. The live angle now comes from drag interaction.
 const INITIAL_ANGLE = 0.4;
+// Fallback Target Zone angle (radians) when the param is absent; the registry
+// param seeds the live target in practice.
+const INITIAL_TARGET_ANGLE = 2.4;
 const SEAM_OFFSET = 0.5;
 const PLANE_WIDTH = 6;
 const PLANE_HEIGHT = 4;
@@ -87,6 +90,9 @@ function TumblerShell({
 export function ShaderLockpicking({ params }: GallerySceneProps) {
   const glassTint = colorParam(params.glassTint, "#8fd6ff");
   const fresnelStrength = numberParam(params.fresnelStrength, 1.6);
+  const causticSharpness = numberParam(params.causticSharpness, 1.0);
+  // Target Zone angle (radians) seeded from the debug param.
+  const targetAngleParam = numberParam(params.targetAngle, INITIAL_TARGET_ANGLE);
 
   const gl = useThree((state) => state.gl);
 
@@ -97,8 +103,17 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
   // Live puzzle state in refs, mutated in useFrame — never in registry params.
   const angleRef = useRef(INITIAL_ANGLE);
   const velocityRef = useRef(0);
+  // Live Target Zone angle. Seeded from the param; re-randomization on Solve is a
+  // later slice. Held in a ref (read in useFrame), not in registry params.
+  const targetRef = useRef(normalizeAngle(targetAngleParam));
   // Drag movement accumulated by pointer handlers, drained each frame.
   const dragDeltaRef = useRef(0);
+
+  // Tweakpane edits to `targetAngle` immediately move the live target so a
+  // debugger can force a known Target Zone and watch the seam's "sharp" angle shift.
+  useEffect(() => {
+    targetRef.current = normalizeAngle(targetAngleParam);
+  }, [targetAngleParam]);
 
   const shellUniforms = useMemo<ShellUniforms[]>(
     () =>
@@ -117,7 +132,11 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
       uSeamAngle: { value: angleRef.current },
       uSeamOffset: { value: SEAM_OFFSET },
       uAspect: { value: PLANE_WIDTH / PLANE_HEIGHT },
+      uTargetAngle: { value: targetRef.current },
+      uProximity: { value: proximity(angleRef.current, targetRef.current) },
+      uCausticSharpness: { value: causticSharpness },
     }),
+    // Created once; live values are written every frame in useFrame.
     [],
   );
 
@@ -192,6 +211,11 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
     const planeMaterial = planeMaterialRef.current;
     if (planeMaterial) {
       planeMaterial.uniforms.uSeamAngle.value = next.angle;
+      // Proximity cue: the Caustic Seam sharpens/brightens as the live rotation
+      // nears the Target Zone. The Solve check stays a separate scalar test.
+      planeMaterial.uniforms.uTargetAngle.value = targetRef.current;
+      planeMaterial.uniforms.uProximity.value = proximity(next.angle, targetRef.current);
+      planeMaterial.uniforms.uCausticSharpness.value = causticSharpness;
     }
     for (let i = 0; i < SHELLS.length; i++) {
       const shellMaterial = shellMaterialsRef.current[i];

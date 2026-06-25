@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { angularDistance, integrate, normalizeAngle } from "./puzzle";
+import { angularDistance, integrate, normalizeAngle, proximity } from "./puzzle";
 
 const TWO_PI = Math.PI * 2;
 
@@ -46,6 +46,36 @@ describe("angularDistance", () => {
   it("is zero for identical angles, including across the wrap", () => {
     expect(angularDistance(1.7, 1.7)).toBeCloseTo(0, 10);
     expect(angularDistance(0, TWO_PI)).toBeCloseTo(0, 10);
+  });
+});
+
+describe("proximity", () => {
+  it("is maximal (1) when the angle equals the target", () => {
+    expect(proximity(1.0, 1.0)).toBeCloseTo(1, 10);
+  });
+
+  it("is maximal (1) at the target across the 0/2π wrap", () => {
+    expect(proximity(0, TWO_PI)).toBeCloseTo(1, 10);
+  });
+
+  it("is minimal (0) at the opposite side of the target", () => {
+    expect(proximity(0, Math.PI)).toBeCloseTo(0, 10);
+  });
+
+  it("increases monotonically as the angle approaches the target", () => {
+    const target = 1.0;
+    let previous = -Infinity;
+    // Sweep from the far side (distance π) inward to the target.
+    for (let d = Math.PI; d >= -1e-9; d -= Math.PI / 12) {
+      const value = proximity(target + d, target);
+      expect(value).toBeGreaterThanOrEqual(previous);
+      previous = value;
+    }
+  });
+
+  it("is wrap-safe: an angle just before 2π is near a target just after 0", () => {
+    // 0.1 rad apart across the wrap → proximity reads as that small distance.
+    expect(proximity(TWO_PI - 0.05, 0.05)).toBeCloseTo(1 - 0.1 / Math.PI, 10);
   });
 });
 

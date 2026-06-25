@@ -19,6 +19,18 @@ export function angularDistance(a: number, b: number): number {
   return delta > Math.PI ? TWO_PI - delta : delta;
 }
 
+/**
+ * Normalized alignment cue in [0, 1] for the Caustic Seam: 1 when `angle`
+ * equals `target`, falling linearly to 0 at the opposite side (shortest-arc
+ * distance π). Increases monotonically as `angle` approaches `target` and is
+ * wrap-safe because it is built on `angularDistance`. Pure — the scene reads it
+ * each frame to drive seam sharpness/brightness; the Solve check stays a
+ * separate scalar test, never 2D pattern matching.
+ */
+export function proximity(angle: number, target: number): number {
+  return 1 - angularDistance(angle, target) / Math.PI;
+}
+
 /** Live rotation state for the Lock Tumbler: current angle and angular velocity. */
 export type RotationState = {
   angle: number;

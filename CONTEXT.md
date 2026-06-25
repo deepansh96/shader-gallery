@@ -30,6 +30,30 @@ _Avoid_: admin panel, dev mode, GPU VRAM monitor
 A static, metadata-driven preview card for a Gallery Item on the home route.
 _Avoid_: live canvas, background shader, preview renderer
 
+**Shader Lockpicking**:
+A Gallery Item presenting a single luminous glass Lock Tumbler suspended in darkness that the user rotates to align a Caustic Seam into a Target Zone.
+_Avoid_: lock game, puzzle page, key minigame
+
+**Lock Tumbler**:
+The single transparent, refractive glass shell at the center of Shader Lockpicking that the user drags to rotate around its axis.
+_Avoid_: dial, wheel, knob, ring
+
+**Caustic Seam**:
+The bright procedural light band cast by the Lock Tumbler that sweeps across the Receiving Plane as the tumbler rotates; the element the user reads to judge alignment.
+_Avoid_: glow, highlight, reflection
+
+**Receiving Plane**:
+The backplate behind the Lock Tumbler onto which the Caustic Seam is projected.
+_Avoid_: wall, screen, floor, background
+
+**Target Zone**:
+The marked keyhole-motif region on the Receiving Plane where the Caustic Seam must align for a Solve.
+_Avoid_: goal, slot, hitbox
+
+**Solve**:
+The state reached when the Lock Tumbler's rotation angle is within tolerance of the Target Zone, triggering a success pulse.
+_Avoid_: win, unlock, score
+
 **Production Domain**:
 The public hostname `shaders.deepansh.in` where Shader Gallery is served.
 _Avoid_: root domain, apex domain, staging URL
@@ -61,6 +85,11 @@ _Avoid_: local state, app database, deploy log
 - The **Shader Template** provides **Debug Tooling** to every **Gallery Item** when `debug=true` is present.
 - A **Gallery Item** has exactly one **Gallery Thumbnail** on the home route.
 - **Template Lab** is exactly one **Gallery Item**.
+- **Shader Lockpicking** is exactly one **Gallery Item**.
+- A **Shader Lockpicking** item contains exactly one **Lock Tumbler** in v1.
+- The **Lock Tumbler** projects exactly one **Caustic Seam** onto the **Receiving Plane**.
+- The **Receiving Plane** contains exactly one **Target Zone**.
+- A **Solve** occurs when the **Caustic Seam** aligns with the **Target Zone** within an angle tolerance.
 - The **Production Domain** points to exactly one **Edge Distribution**.
 - The **Edge Distribution** reads from exactly one **App Origin**.
 - The **App Origin** stores one active **Deploy Artifact** at a time.
@@ -140,3 +169,35 @@ The first Terraform deployment target is `prod` only. Resource naming and variab
 ### CloudFront Cache Policy Favors Fast App Updates
 
 Hashed Vite assets should receive long immutable cache headers. The SPA entrypoint `index.html` receives `Cache-Control: no-cache` so route shell updates propagate quickly. The deploy workflow uploads immutable assets before `index.html`, retains old hashed assets during the same deploy for already-loaded clients, and invalidates `/*` after each deploy for simplicity, with narrower invalidations left for later optimization.
+
+### Shader Lockpicking v1 Ships a Single Lock Tumbler
+
+The first version of Shader Lockpicking is a single fully-realized Lock Tumbler, not the full multi-tumbler stack. v1 proves the load-bearing interaction end to end: drag-to-rotate (pointer and touch), a Caustic Seam projected onto the Receiving Plane, and a success pulse on Solve. The multi-tumbler stack, banked shader masks, seam-to-next-tumbler chaining, lock skins, and speedrun mode are explicitly out of scope for v1 and become follow-up child issues.
+
+### Solve Is Angular Seam-Into-Target Alignment, Not Literal Silhouette Matching
+
+A Solve is determined by a single scalar check: the Lock Tumbler's rotation angle is within tolerance of the Target Zone angle. The "key silhouette" is a visual motif — the Target Zone is styled as a keyhole and the Caustic Seam visibly sharpens into a key-shaped glint at alignment — but the win condition never performs 2D pattern recognition. This keeps the target readable ("am I close?" is obvious from seam sharpness/brightness) and cheap, directly mitigating the documented readability-versus-complexity risk.
+
+### Interactive Gallery Items Own Their Runtime Concerns Until a Second Consumer Justifies Promotion
+
+Shader Lockpicking owns its postprocessing (bloom, spectral color), its interaction handling, and its puzzle state internally. The Shader Template stays a thin scene host: it has no EffectComposer, interaction-state, or game-loop machinery in v1. These capabilities are promoted into the shared Template only when a second Gallery Item genuinely needs them, rather than reshaping the shared runtime around a single consumer.
+
+### Interaction Is Fixed-Camera Drag-To-Rotate With a Single Solve Axis
+
+The camera is fixed, framing the Lock Tumbler and Receiving Plane. A pointer or touch drag rotates the Lock Tumbler around its axis, and that rotation angle is the single Solve variable. Rotation is updated imperatively in `useFrame` with drag velocity and magnetic easing near the Target Zone. The item mounts its own `<PerspectiveCamera makeDefault>` rather than changing the shared Template's fullscreen-plane camera.
+
+### Glass and Caustics Use Layered Shells and Procedural Bands, Not Raymarching or Extra Passes
+
+The Lock Tumbler is built from a few layered transparent shells with additive blending and a Fresnel rim, not volumetric raymarching. The Caustic Seam is generated procedurally in the fragment shader (no texture asset) and projected onto the Receiving Plane, with its sharpness and brightness peaking at the target angle so it doubles as the readability cue. Refraction is faked in v1 via UV-warp of the seam and a subtle normal-driven backplate distortion, keeping v1 to a single render pass plus bloom. A low-resolution render-target refraction pass is a documented v1.1 upgrade, used only if the glass reads flat.
+
+### Puzzle State Is Item-Local Runtime State, Distinct From Tweakable Params
+
+Live puzzle state (rotation angle, angular velocity, distance-to-target, solved flag) lives inside the Shader Lockpicking item in refs mutated in `useFrame`, never in the registry `params`. The Gallery Item `params` surface remains the static debug-tuning path through Tweakpane under `debug=true`, exposing tuning knobs such as glass tint, Fresnel strength, caustic sharpness, bloom strength, target angle, and solve tolerance. The Shader Template gains no runtime-state machinery for this.
+
+### Shader Lockpicking Is a Self-Looping Demo With No End State
+
+On Solve, the Caustic Seam snaps crisp into the keyhole Target Zone, a success pulse fires (bloom flare, spectral bloom, a held key-silhouette glint), and the rim shifts to a solved spectral hue. After a brief hold the puzzle re-arms: the Target Zone angle re-randomizes and the seam returns to its searching state, so the demo loops indefinitely. v1 has no score, levels, or persistent progression — those remain deferred child ideas.
+
+### Shader Lockpicking Has an Explicit Mobile-Safe Performance Budget
+
+v1 holds a measurable budget: DPR capped at the Template's `1.75`, a single bloom pass whose render target runs at half resolution, at most about four transparent shells, and no per-frame geometry allocation (only uniform and ref mutation in `useFrame`). The target is 60fps on desktop and a 30fps floor on mid-range mobile; if that floor cannot be met the fallback is fewer shells and lower bloom resolution rather than shipping a janky default. Touch drag must suppress page scrolling so mobile interaction works.

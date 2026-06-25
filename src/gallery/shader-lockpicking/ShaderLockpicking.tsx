@@ -4,7 +4,14 @@ import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { AdditiveBlending, Color, DoubleSide, type ShaderMaterial } from "three";
 import type { GalleryParamValue, GallerySceneProps } from "../types";
-import { integrate, isSolved, normalizeAngle, pickNewTarget, proximity } from "./puzzle";
+import {
+  integrate,
+  isSolved,
+  magneticEase,
+  normalizeAngle,
+  pickNewTarget,
+  proximity,
+} from "./puzzle";
 import planeFragment from "./receivingPlane.frag.glsl";
 import planeVertex from "./receivingPlane.vert.glsl";
 import tumblerFragment from "./tumbler.frag.glsl";
@@ -33,6 +40,17 @@ const MAX_FRAME_DELTA = 0.05;
 // above the largest selectable solveTolerance for the same reason.
 const MIN_SEPARATION = 0.9; // radians (~51°)
 const SOLVE_HOLD_SECONDS = 1.1; // brief hold before re-arming
+
+// Magnetic easing assist: within MAGNETIC_BAND radians (shortest-arc) of the live
+// Target Zone, a gentle pull eases the rotation toward the target so landing a
+// Solve feels satisfying rather than fiddly; beyond the band the drag stays fully
+// free. MAGNETIC_STRENGTH is the per-frame fraction of the remaining distance the
+// pull closes at the band center; the pure easing bounds the correction so it can
+// reach the target but never overshoot into oscillation. The band sits between
+// the largest selectable solveTolerance (0.6) and MIN_SEPARATION so the assist
+// engages as the player approaches a Solve without reaching the next target.
+const MAGNETIC_STRENGTH = 0.16;
+const MAGNETIC_BAND = 0.6; // radians (~34°)
 // Transient bloom flare: a success-pulse envelope (1 → 0) that decays over this
 // many seconds and boosts bloom intensity at its peak.
 const PULSE_DECAY_SECONDS = 0.85;
@@ -259,7 +277,19 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
       { dragDelta: dragDeltaRef.current, dt: delta },
       { damping: ROTATION_DAMPING, maxDt: MAX_FRAME_DELTA },
     );
-    angleRef.current = next.angle;
+
+    // Magnetic easing assist: compose a gentle pull toward the live Target Zone on
+    // top of the integrator's drag/inertia. It engages only within MAGNETIC_BAND
+    // of the target (free drag far away) and is bounded so it never overshoots,
+    // making the Solve easier to land without fighting the drag. Reads the live
+    // target ref, so it follows the re-randomized target each round. Pure math
+    // only — no per-frame allocation and nothing written to registry params.
+    const correction = magneticEase(next.angle, targetRef.current, {
+      strength: MAGNETIC_STRENGTH,
+      band: MAGNETIC_BAND,
+    });
+    const angle = normalizeAngle(next.angle + correction);
+    angleRef.current = angle;
     velocityRef.current = next.velocity;
     dragDeltaRef.current = 0;
 
@@ -274,10 +304,10 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
       if (holdTimerRef.current <= 0) {
         // Re-arm: a fresh Target Zone at least MIN_SEPARATION from the current
         // angle (never trivially solved), then the seam returns to searching.
-        targetRef.current = pickNewTarget(next.angle, Math.random, MIN_SEPARATION);
+        targetRef.current = pickNewTarget(angle, Math.random, MIN_SEPARATION);
         solvedRef.current = false;
       }
-    } else if (isSolved(next.angle, targetRef.current, solveTolerance)) {
+    } else if (isSolved(angle, targetRef.current, solveTolerance)) {
       solvedRef.current = true;
       holdTimerRef.current = SOLVE_HOLD_SECONDS;
       pulseRef.current = 1;
@@ -296,18 +326,18 @@ export function ShaderLockpicking({ params }: GallerySceneProps) {
     // (no per-frame allocation).
     const planeMaterial = planeMaterialRef.current;
     if (planeMaterial) {
-      planeMaterial.uniforms.uSeamAngle.value = next.angle;
+      planeMaterial.uniforms.uSeamAngle.value = angle;
       // Proximity cue: the Caustic Seam sharpens/brightens as the live rotation
       // nears the Target Zone. The Solve check stays a separate scalar test.
       planeMaterial.uniforms.uTargetAngle.value = targetRef.current;
-      planeMaterial.uniforms.uProximity.value = proximity(next.angle, targetRef.current);
+      planeMaterial.uniforms.uProximity.value = proximity(angle, targetRef.current);
       planeMaterial.uniforms.uCausticSharpness.value = causticSharpness;
       planeMaterial.uniforms.uSolved.value = glowRef.current;
     }
     for (let i = 0; i < SHELLS.length; i++) {
       const shellMaterial = shellMaterialsRef.current[i];
       if (!shellMaterial) continue;
-      shellMaterial.uniforms.uAngle.value = next.angle;
+      shellMaterial.uniforms.uAngle.value = angle;
       shellMaterial.uniforms.uGlassTint.value.set(glassTint).multiplyScalar(SHELLS[i].tint);
       shellMaterial.uniforms.uFresnelStrength.value = fresnelStrength;
       shellMaterial.uniforms.uSolved.value = glowRef.current;

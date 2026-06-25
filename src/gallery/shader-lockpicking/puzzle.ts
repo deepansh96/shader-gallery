@@ -32,6 +32,63 @@ export function proximity(angle: number, target: number): number {
 }
 
 /**
+ * Signed shortest-arc delta to rotate `from` toward `to` (radians), in the
+ * half-open range (−π, π]. Positive means rotating `from` upward (increasing
+ * angle) reaches `to` by the shortest path; negative means downward. Wrap-safe
+ * because it is built on `normalizeAngle`.
+ */
+function signedAngularDelta(from: number, to: number): number {
+  const delta = normalizeAngle(to - from);
+  return delta > Math.PI ? delta - TWO_PI : delta;
+}
+
+/** Tuning for the magnetic-easing alignment assist. */
+export type MagneticEaseConfig = {
+  /**
+   * Assist strength: the fraction of the remaining shortest-arc distance the
+   * correction closes at the band center (where the pull is strongest). `0`
+   * disables the assist. Values are clamped so the correction never overshoots.
+   */
+  strength: number;
+  /**
+   * Influence band (radians, shortest-arc) around the target within which the
+   * pull engages. Outside the band the correction is `0`, leaving the drag fully
+   * free.
+   */
+  band: number;
+};
+
+/**
+ * Magnetic-easing assist for the Lock Tumbler: an angular correction (radians)
+ * that gently pulls the rotation `angle` toward the Target Zone `target` so
+ * landing a Solve feels satisfying rather than fiddly. The pull engages only
+ * within `band` of the target and ramps up from `0` at the band edge to its
+ * strongest at the target, scaling with `strength`. Outside the band it returns
+ * `0`, so dragging far from the target is unobstructed.
+ *
+ * The correction is directed toward the target (same sign as the shortest-arc
+ * delta) and its magnitude is bounded by the remaining distance, so applying it
+ * (`angle + correction`) can never overshoot past the target into oscillation.
+ * Pure and wrap-safe across the 0/2π boundary; the scene composes it with the
+ * rotation integrator each frame, reading the live (re-randomized) target.
+ */
+export function magneticEase(angle: number, target: number, config: MagneticEaseConfig): number {
+  const { strength, band } = config;
+  if (band <= 0 || strength <= 0) return 0;
+
+  const delta = signedAngularDelta(angle, target);
+  const distance = Math.abs(delta);
+  if (distance >= band) return 0;
+
+  // Ramp from 0 at the band edge to 1 at the target, scaled by strength and
+  // clamped to [0, 1] so the correction is at most the full remaining distance —
+  // it can reach the target but never cross it.
+  const ramp = 1 - distance / band;
+  const factor = Math.min(strength * ramp, 1);
+  return factor * delta;
+}
+
+/**
  * The Solve condition for Shader Lockpicking: `true` exactly when the Lock
  * Tumbler's rotation `angle` is within `tolerance` of the Target Zone `target`,
  * measured by shortest-arc distance (so it is wrap-safe across 0/2π). This is

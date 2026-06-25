@@ -3,12 +3,20 @@ import {
   angularDistance,
   integrate,
   isSolved,
+  magneticEase,
   normalizeAngle,
   pickNewTarget,
   proximity,
 } from "./puzzle";
 
 const TWO_PI = Math.PI * 2;
+
+// Signed shortest-arc residual from `angle` to `target`, in (−π, π]. A test-side
+// helper to assert the easing pulls toward the target without crossing it.
+function signedDelta(angle: number, target: number): number {
+  const delta = normalizeAngle(target - angle);
+  return delta > Math.PI ? delta - TWO_PI : delta;
+}
 
 describe("normalizeAngle", () => {
   it("leaves an angle already in [0, 2π) unchanged", () => {
@@ -158,6 +166,75 @@ describe("pickNewTarget", () => {
       pickNewTarget(2.0, rng, minSeparation),
       10,
     );
+  });
+});
+
+describe("magneticEase", () => {
+  it("returns a correction directed toward the target when inside the band", () => {
+    // angle 1.0, target 1.3 → the assist should nudge the angle forward (+).
+    const correction = magneticEase(1.0, 1.3, { strength: 0.2, band: 0.6 });
+    expect(correction).toBeGreaterThan(0);
+  });
+
+  it("returns zero correction outside the influence band (far from target)", () => {
+    // Shortest-arc distance π ≫ band → no pull at all.
+    expect(magneticEase(0, Math.PI, { strength: 0.5, band: 0.6 })).toBe(0);
+    // Just outside the band edge also yields no pull.
+    expect(magneticEase(1.0, 1.7, { strength: 0.5, band: 0.6 })).toBe(0);
+  });
+
+  it("pulls toward a target that is behind the current angle (negative direction)", () => {
+    // angle 1.3, target 1.0 → the assist should nudge the angle backward (−).
+    const correction = magneticEase(1.3, 1.0, { strength: 0.2, band: 0.6 });
+    expect(correction).toBeLessThan(0);
+  });
+
+  it("scales the correction with strength", () => {
+    // Below the no-overshoot clamp, the correction is linear in strength, so
+    // doubling the strength doubles the pull at the same angle/target.
+    const weak = magneticEase(1.0, 1.3, { strength: 0.1, band: 0.6 });
+    const strong = magneticEase(1.0, 1.3, { strength: 0.2, band: 0.6 });
+    expect(strong).toBeCloseTo(2 * weak, 10);
+  });
+
+  it("never overshoots past the target across a sweep of offsets inside the band", () => {
+    // Even at an aggressive strength, applying the correction must move toward
+    // the target without crossing it: the residual distance stays the same sign
+    // (no oscillation) and never grows. Swept on both sides of the target.
+    const target = 2.0;
+    const band = 0.6;
+    for (let offset = -band + 0.01; offset < band; offset += 0.02) {
+      const angle = target + offset;
+      const before = signedDelta(angle, target);
+      const correction = magneticEase(angle, target, { strength: 0.95, band });
+      const after = signedDelta(angle + correction, target);
+      // Same sign (or landed exactly): no flip across the target.
+      expect(Math.sign(after) === Math.sign(before) || after === 0).toBe(true);
+      // Monotone: never further from the target than before.
+      expect(Math.abs(after)).toBeLessThanOrEqual(Math.abs(before) + 1e-9);
+    }
+  });
+
+  it("is wrap-safe across the 0/2π boundary", () => {
+    // angle just before 2π, target just after 0 → shortest arc is a tiny forward
+    // step across the seam, so the pull is small, positive, and crosses the wrap.
+    const angle = TWO_PI - 0.05;
+    const target = 0.05;
+    const correction = magneticEase(angle, target, { strength: 0.3, band: 0.6 });
+    expect(correction).toBeGreaterThan(0);
+    // It must not overshoot the 0.1-rad shortest-arc gap.
+    expect(correction).toBeLessThanOrEqual(0.1 + 1e-9);
+
+    // A target just *before* the seam from an angle just after it pulls backward
+    // across the wrap (negative), still bounded by the shortest-arc gap.
+    const back = magneticEase(0.05, TWO_PI - 0.05, { strength: 0.3, band: 0.6 });
+    expect(back).toBeLessThan(0);
+    expect(Math.abs(back)).toBeLessThanOrEqual(0.1 + 1e-9);
+  });
+
+  it("returns zero when strength or band is non-positive", () => {
+    expect(magneticEase(1.0, 1.1, { strength: 0, band: 0.6 })).toBe(0);
+    expect(magneticEase(1.0, 1.1, { strength: 0.3, band: 0 })).toBe(0);
   });
 });
 
